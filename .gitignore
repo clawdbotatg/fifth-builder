@@ -1,0 +1,3 @@
+builds/
+.env
+ipfs-upload.config.json
