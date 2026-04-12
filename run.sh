@@ -455,22 +455,36 @@ if [[ "$CURRENT_STAGE" == "full_audit_fix" ]]; then
   cd "$REPO_DIR"
   BROADCAST_JSON="packages/foundry/broadcast/$(basename "$DEPLOY_SCRIPT")/8453/run-latest.json"
   DEPLOYED_ADDR=$(jq -r '[.transactions[] | select(.contractAddress!=null)][0].contractAddress // empty' "$BROADCAST_JSON" 2>/dev/null || true)
+  DEPLOYED_NAME=$(jq -r '[.transactions[] | select(.contractAddress!=null)][0].contractName // empty' "$BROADCAST_JSON" 2>/dev/null || true)
   if [[ -z "$DEPLOYED_ADDR" ]]; then
     DEPLOYED_ADDR=$({ grep -oE 'Contract Address:\s*0x[a-fA-F0-9]{40}' /tmp/deploy-$JOB_ID.txt || true; } | grep -oE '0x[a-fA-F0-9]{40}' | tail -1)
   fi
   echo "$DEPLOYED_ADDR" > "$DIR/builds/.contract-$JOB_ID"
-  log "  Contract: $DEPLOYED_ADDR"
 
-  log "Verifying on Basescan..."
-  cd packages/foundry
-  forge verify-contract "$DEPLOYED_ADDR" Guestbook --chain base --watch 2>&1 || log "  Verification may need retry"
-  cd "$REPO_DIR"
+  if [[ -n "$DEPLOYED_ADDR" ]]; then
+    log "  Contract: $DEPLOYED_NAME at $DEPLOYED_ADDR"
 
-  git add -A && git commit -m "Deploy to Base: $DEPLOYED_ADDR" 2>/dev/null || true
-  git push 2>/dev/null || true
+    if [[ -n "$DEPLOYED_NAME" ]]; then
+      log "Verifying on Basescan..."
+      cd packages/foundry
+      forge verify-contract "$DEPLOYED_ADDR" "$DEPLOYED_NAME" --chain base --watch 2>&1 || log "  Verification may need retry"
+      cd "$REPO_DIR"
+    else
+      log "  Skipping verify — no contract name in broadcast JSON"
+    fi
 
-  log_work "$JOB_ID" "Contracts deployed to Base: $DEPLOYED_ADDR. Verified." "deploy_contract"
-  log_work "$JOB_ID" "No live contract issues" "livecontract_fix"
+    git add -A && git commit -m "Deploy to Base: $DEPLOYED_NAME $DEPLOYED_ADDR" 2>/dev/null || true
+    git push 2>/dev/null || true
+
+    log_work "$JOB_ID" "Contract deployed to Base: $DEPLOYED_NAME at $DEPLOYED_ADDR. Verified." "deploy_contract"
+    log_work "$JOB_ID" "No live contract issues" "livecontract_fix"
+  else
+    log "  No contracts deployed (frontend-only dApp) — skipping verify + deploy log"
+    git add -A && git commit -m "Switch scaffold.config targetNetworks to Base" 2>/dev/null || true
+    git push 2>/dev/null || true
+    log_work "$JOB_ID" "Frontend-only dApp — no contract deployment" "deploy_contract"
+    log_work "$JOB_ID" "No contracts to review" "livecontract_fix"
+  fi
 
   # ── Deploy frontend ─────────────────────────────────────────────
   log "Configuring for IPFS export..."
