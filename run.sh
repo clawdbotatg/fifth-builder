@@ -120,6 +120,13 @@ echo "  Repo:   $REPO_NAME"
 echo "=========================================="
 echo ""
 
+# If on-chain stage says we're past setup but the local build dir is missing,
+# force a full restart — otherwise later steps will cd into a non-existent dir.
+if [[ ! -d "$REPO_DIR" && "$CURRENT_STAGE" != "accepted" && "$CURRENT_STAGE" != "" && "$CURRENT_STAGE" != "null" ]]; then
+  log "Local build dir missing for $CURRENT_STAGE stage — forcing restart from scratch."
+  CURRENT_STAGE="accepted"
+fi
+
 # =====================================================================
 #  STEP 1: SETUP — scaffold, deployer, repo
 # =====================================================================
@@ -457,7 +464,7 @@ if [[ "$CURRENT_STAGE" == "full_audit_fix" ]]; then
   DEPLOYED_ADDR=$(jq -r '[.transactions[] | select(.contractAddress!=null)][0].contractAddress // empty' "$BROADCAST_JSON" 2>/dev/null || true)
   DEPLOYED_NAME=$(jq -r '[.transactions[] | select(.contractAddress!=null)][0].contractName // empty' "$BROADCAST_JSON" 2>/dev/null || true)
   if [[ -z "$DEPLOYED_ADDR" ]]; then
-    DEPLOYED_ADDR=$({ grep -oE 'Contract Address:\s*0x[a-fA-F0-9]{40}' /tmp/deploy-$JOB_ID.txt || true; } | grep -oE '0x[a-fA-F0-9]{40}' | tail -1)
+    DEPLOYED_ADDR=$(grep -oE '0x[a-fA-F0-9]{40}' /tmp/deploy-$JOB_ID.txt 2>/dev/null | tail -1 || true)
   fi
   echo "$DEPLOYED_ADDR" > "$DIR/builds/.contract-$JOB_ID"
 
