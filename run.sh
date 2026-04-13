@@ -458,8 +458,11 @@ if [[ "$CURRENT_STAGE" == "full_audit_fix" ]]; then
   DEPLOY_SCRIPT=$(ls script/Deploy*.s.sol | grep -v DeployYourContract | grep -v DeployHelpers | head -1)
   [[ -z "$DEPLOY_SCRIPT" ]] && DEPLOY_SCRIPT=$(ls script/Deploy*.s.sol | grep -v DeployHelpers | head -1)
   log "  Using deploy script: $DEPLOY_SCRIPT"
-  DEPLOYER_PRIVATE_KEY="$DEPLOYER_PRIVATE_KEY" \
-    forge script "$DEPLOY_SCRIPT" --rpc-url "$RPC" --broadcast --ffi 2>&1 | tee /tmp/deploy-$JOB_ID.txt
+  forge script "$DEPLOY_SCRIPT" \
+    --rpc-url "$RPC" \
+    --broadcast \
+    --ffi \
+    --private-key "$DEPLOYER_PRIVATE_KEY" 2>&1 | tee /tmp/deploy-$JOB_ID.txt
   node scripts-js/generateTsAbis.js 2>&1 | tee -a /tmp/deploy-$JOB_ID.txt || true
   cd "$REPO_DIR"
   BROADCAST_JSON="packages/foundry/broadcast/$(basename "$DEPLOY_SCRIPT")/8453/run-latest.json"
