@@ -163,10 +163,19 @@ if [[ "$CURRENT_STAGE" == "accepted" || "$CURRENT_STAGE" == "" || "$CURRENT_STAG
   done
   cd "$DIR"
 
-  # Write project .env — deployer key only, NEVER main key
+  # Write project .env — NEVER put the real deployer private key on disk in the
+  # build dir. The LLM agents run with --dangerously-skip-permissions and have
+  # leaked the key by quoting it verbatim into AUDIT_REPORT.md, which then got
+  # committed to the public github repo. forge gets the real key from run.sh's
+  # --private-key CLI flag at deploy time (STEP 4). The placeholder below exists
+  # so that `vm.envUint("DEPLOYER_PRIVATE_KEY")` won't panic during forge build
+  # or forge test; it's the anvil default account #0, publicly known, worthless.
   log "Deployer: $DEPLOYER_ADDR"
   cat > "$REPO_DIR/.env" <<EOF
-DEPLOYER_PRIVATE_KEY=$DEPLOYER_PRIVATE_KEY
+# Stub — real deployer key is injected by the build worker at deploy time.
+# Do NOT paste the real key here. Do NOT write this value into reports/commits.
+DEPLOYER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+DEPLOYER_ADDRESS=$DEPLOYER_ADDR
 ALCHEMY_API_KEY=$ALCHEMY_API_KEY
 EOF
   chmod 600 "$REPO_DIR/.env"
@@ -245,9 +254,9 @@ CLIENT ADDRESS (all owner/admin/treasury roles → this address): $CLIENT
 DEPLOYER ADDRESS: $DEPLOYER_ADDR
 TARGET CHAIN: Base (8453)
 
-The .env in this repo has DEPLOYER_PRIVATE_KEY and ALCHEMY_API_KEY.
-NEVER use any other private key. NEVER hardcode keys in source files.
-Always use Alchemy RPCs, never public RPCs.
+The .env in this repo has a STUB DEPLOYER_PRIVATE_KEY (the public anvil #0 key, for local forge build/test only) plus DEPLOYER_ADDRESS and ALCHEMY_API_KEY. The real production deployer key is injected by the build worker via forge's --private-key CLI flag at deploy time; the deploy script must use vm.startBroadcast() with NO arguments so forge picks up the CLI-supplied key.
+
+NEVER reproduce secret values in code, comments, reports, READMEs, or commit messages. Reference by variable name only. Always use Alchemy RPCs, never public RPCs.
 
 MANDATORY — fetch and follow these EXACTLY:
 - https://ethskills.com/SKILL.md (the master skill index — follow it)
@@ -353,6 +362,14 @@ For each item:
 - Audit frameworks followed: contract audit (ethskills), QA audit (ethskills)
 
 Do not fix anything. Only write the report. Be thorough but honest — do not invent issues that don't exist.
+
+SECRET HANDLING — NON-NEGOTIABLE:
+- AUDIT_REPORT.md gets committed to a PUBLIC github repo.
+- NEVER reproduce the value of any secret in the report. That includes the contents of .env, DEPLOYER_PRIVATE_KEY, ALCHEMY_API_KEY, WALLETCONNECT IDs, mnemonics, API keys, or anything that looks like one.
+- Refer to secrets by their variable name only (e.g. "DEPLOYER_PRIVATE_KEY in .env" — NEVER "DEPLOYER_PRIVATE_KEY=0x...").
+- Do NOT paste any hex string 32+ chars long, any BEGIN…PRIVATE KEY block, any bearer token, any quoted value from .env.
+- If you need to cite a value to explain an issue, write "[REDACTED]" in its place.
+- A single leaked key in this report will burn the deployer wallet and every future job — take this seriously.
 AUDIT_PROMPT
 )"
 
@@ -415,9 +432,26 @@ Do ALL of the following:
 
 5. Commit and push all changes with message: "Audit cycle $CYCLE fixes"
 
+SECRET HANDLING — NON-NEGOTIABLE:
+- This repo is PUBLIC on github. Everything you commit is world-readable forever.
+- NEVER reproduce secrets when editing AUDIT_REPORT.md, README.md, commit messages, or code comments. That includes .env contents, private keys, API keys, mnemonics, bearer tokens.
+- When referencing an audit finding about a secret, name the variable (e.g. "DEPLOYER_PRIVATE_KEY in .env") — NEVER paste the value. Replace with "[REDACTED]" if a value is unavoidable.
+- If you see an AUDIT_REPORT.md from a prior cycle that contains a secret value, redact it before committing — do not propagate the leak.
+
 Do not ask me anything.
 FIX_PROMPT
 )"
+
+    # ── Pre-commit secret scan — bail if the fix agent leaked a key ──
+    cd "$REPO_DIR"
+    if git log -p -1 HEAD 2>/dev/null | grep -E '(0x[a-fA-F0-9]{64})|(BEGIN [A-Z ]*PRIVATE KEY)|(ghp_[A-Za-z0-9]{30,})|(sk-[A-Za-z0-9]{30,})' >/dev/null; then
+      log "FATAL: audit cycle $CYCLE commit contains a secret — refusing to continue."
+      git log -p -1 HEAD | grep -nE '(0x[a-fA-F0-9]{64})|(BEGIN [A-Z ]*PRIVATE KEY)|(ghp_[A-Za-z0-9]{30,})|(sk-[A-Za-z0-9]{30,})' | head -3
+      log "  Rotate the leaked credential and scrub before retrying."
+      cd "$DIR"
+      exit 1
+    fi
+    cd "$DIR"
 
     log "  Fix cycle $CYCLE complete."
   done
