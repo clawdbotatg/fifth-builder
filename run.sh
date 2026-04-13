@@ -238,7 +238,7 @@ if [[ "$CURRENT_STAGE" == "create_user_journey" || "$CURRENT_STAGE" == "create_p
   log "═══ STEP 2: BUILD ═══"
 
   cd "$REPO_DIR"
-  claude -p --model sonnet --dangerously-skip-permissions "$(cat <<PROMPT
+  claude -p --model opus --dangerously-skip-permissions "$(cat <<PROMPT
 You are building a dApp. Read PLAN.md in this repo — that is your spec.
 
 CLIENT ADDRESS (all owner/admin/treasury roles → this address): $CLIENT
@@ -298,8 +298,10 @@ if [[ "$CURRENT_STAGE" == "prototype" ]]; then
     log "── Audit cycle $CYCLE/$MAX_CYCLES ──"
 
     # ── AUDIT (separate agent — reads code, writes report) ──────────
-    log "Running audit agent..."
-    claude -p --model sonnet --dangerously-skip-permissions "$(cat <<AUDIT_PROMPT
+    # First-cycle audit uses opus: the richer findings shape the rest of the loop.
+    AUDIT_MODEL=$([[ "$CYCLE" == "1" ]] && echo opus || echo sonnet)
+    log "Running audit agent ($AUDIT_MODEL)..."
+    claude -p --model "$AUDIT_MODEL" --dangerously-skip-permissions "$(cat <<AUDIT_PROMPT
 You are a security auditor and QA engineer. You are auditing a Scaffold-ETH 2 dApp.
 
 MANDATORY — fetch and follow these audit frameworks EXACTLY:
