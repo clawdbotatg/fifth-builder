@@ -1,3 +1,4 @@
 builds/
+logs/
 .env
 ipfs-upload.config.json
