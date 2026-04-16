@@ -485,7 +485,7 @@ fi
 
 if [[ "$CURRENT_STAGE" == "create_user_journey" || "$CURRENT_STAGE" == "create_plan" || "$CURRENT_STAGE" == "create_repo" ]]; then
   log "═══ STEP 2: BUILD ═══"
-  pm_log "step2:build" "opus" "build dApp from PLAN.md — contracts, tests, frontend, forge build/test, yarn next:build"
+  pm_log "step2:build" "claude-opus-4-7" "build dApp from PLAN.md — contracts, tests, frontend, forge build/test, yarn next:build"
 
   # NOTE (deferred): every `claude -p` subagent below inherits the operator's
   # ~/.claude/ config — including custom slash-commands like /commit. That's
@@ -497,7 +497,7 @@ if [[ "$CURRENT_STAGE" == "create_user_journey" || "$CURRENT_STAGE" == "create_p
   # flag. Needs testing against the current claude CLI before flipping.
 
   cd "$REPO_DIR"
-  claude_timeout 5400 -p --model opus --dangerously-skip-permissions "$(cat <<PROMPT
+  claude_timeout 5400 -p --model claude-opus-4-7 --dangerously-skip-permissions "$(cat <<PROMPT
 You are building a dApp. Read PLAN.md in this repo — that is your spec.
 
 CLIENT ADDRESS (all owner/admin/treasury roles → this address): $CLIENT
@@ -570,8 +570,8 @@ if [[ "$CURRENT_STAGE" == "prototype" ]]; then
     log "── Audit cycle $CYCLE/$MAX_CYCLES ──"
 
     # ── AUDIT (separate agent — reads code, writes report) ──────────
-    # First-cycle audit uses opus: the richer findings shape the rest of the loop.
-    AUDIT_MODEL=$([[ "$CYCLE" == "1" ]] && echo opus || echo sonnet)
+    # First-cycle audit uses opus 4.7: the richer findings shape the rest of the loop.
+    AUDIT_MODEL=$([[ "$CYCLE" == "1" ]] && echo claude-opus-4-7 || echo sonnet)
     log "Running audit agent ($AUDIT_MODEL)..."
     pm_log "step3:audit c$CYCLE/$MAX_CYCLES" "$AUDIT_MODEL" "security + QA audit, produce AUDIT_REPORT.md"
     claude_timeout 1800 -p --model "$AUDIT_MODEL" --dangerously-skip-permissions "$(cat <<AUDIT_PROMPT

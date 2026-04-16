@@ -9,8 +9,8 @@ Polls the LeftClaw API for open build jobs, accepts one on-chain, scaffolds a fr
 `run.sh` is the whole worker. Given a job, it:
 
 1. **Setup** — accepts the job on-chain, scaffolds `create-eth@latest -s foundry` under `builds/leftclaw-service-job-<id>/`, hardens `.gitignore`, writes a stub `.env` and a `PLAN.md` derived from the client's spec + messages, creates a public GitHub repo under `clawdbotatg`.
-2. **Build** — single `claude -p --model opus` call. Agent reads `PLAN.md`, writes contracts + deploy script + tests + frontend, runs `forge build` / `forge test` / `yarn next:build` until clean, transfers all privileged roles to the client address.
-3. **Audit / fix loop** — up to 3 cycles. A separate auditor agent (opus on cycle 1, sonnet after) writes `AUDIT_REPORT.md`; a fixer agent (sonnet) works the `## MUST FIX` checklist and annotates `## KNOWN ISSUES` with NatSpec. Loop exits early when zero must-fix items remain.
+2. **Build** — single `claude -p --model claude-opus-4-7` call. Agent reads `PLAN.md`, writes contracts + deploy script + tests + frontend, runs `forge build` / `forge test` / `yarn next:build` until clean, transfers all privileged roles to the client address.
+3. **Audit / fix loop** — up to 3 cycles. A separate auditor agent (opus 4.7 on cycle 1, sonnet after) writes `AUDIT_REPORT.md`; a fixer agent (sonnet) works the `## MUST FIX` checklist and annotates `## KNOWN ISSUES` with NatSpec. Loop exits early when zero must-fix items remain.
 4. **Deploy** — switches `scaffold.config.ts` to Base, runs the deploy script via `forge script --private-key` (key injected at CLI, never on disk in the build dir), verifies on Basescan, exports the Next.js app, uploads the static build to bgipfs, writes a README, calls `completeJob` on-chain with the live URL.
 
 Resumable: `./run.sh <job-id>` picks up wherever the on-chain `currentStage` says the job is. `./run.sh` with no args polls `/api/job/ready` and takes the next service-type-6 job.
