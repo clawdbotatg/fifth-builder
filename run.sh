@@ -165,10 +165,10 @@ commit_and_scan() {
 log_work() {
   local job_id="$1" note="$2" stage="$3" out
   log "  logWork → $stage"
-  # We fire 8+ logWork calls back-to-back at the end of STEP 3. cast send waits
-  # for 1 confirmation by default but Base reorgs / pending-pool churn still
-  # produce occasional "nonce too low" / "already known" failures. Retry once
-  # after a short backoff if the failure smells like a nonce race.
+  # Brief pause before every send so back-to-back calls don't race each other's
+  # nonces. 2s is enough for Base to confirm the prior tx and advance the nonce.
+  sleep 2
+  # Retry once on nonce/mempool races (which can still happen despite the delay).
   for attempt in 1 2; do
     if out=$(cast send "$CONTRACT" "logWork(uint256,string,string)" \
         "$job_id" "$note" "$stage" \
@@ -176,9 +176,9 @@ log_work() {
       echo "$out" | tail -3
       return 0
     fi
-    if [[ "$attempt" -lt 2 ]] && echo "$out" | grep -qiE 'nonce|already known|replacement underpriced'; then
-      log "  nonce/race on $stage — retrying in 3s..."
-      sleep 3
+    if [[ "$attempt" -lt 2 ]] && echo "$out" | grep -qiE 'nonce|already known|replacement underpriced|server returned'; then
+      log "  nonce/race on $stage — retrying in 4s..."
+      sleep 4
       continue
     fi
     echo "$out" | tail -3
@@ -796,9 +796,19 @@ if [[ "$CURRENT_STAGE" == "full_audit_fix" ]]; then
   else
     log "Deploying contracts..."
     log "  Using deploy script: $DEPLOY_SCRIPT"
-    pm_log "step4:forge" "forge" "forge script $DEPLOY_SCRIPT --broadcast (Base mainnet)"
+    # Dynamically find the deployer contract name — the build agent may add helper
+    # contracts (e.g. MockERC20) to Deploy.s.sol, which causes forge to complain
+    # about multiple contracts unless we specify --tc. Grep for the contract that
+    # inherits ScaffoldETHDeploy; fall back to "DeployScript" if not found.
+    DEPLOY_CONTRACT=$(grep -E 'contract [A-Za-z0-9_]+ is ScaffoldETHDeploy' \
+        packages/foundry/script/Deploy.s.sol 2>/dev/null \
+        | grep -oE 'contract [A-Za-z0-9_]+' | head -1 | awk '{print $2}')
+    DEPLOY_CONTRACT="${DEPLOY_CONTRACT:-DeployScript}"
+    log "  Deployer contract: $DEPLOY_CONTRACT"
+    pm_log "step4:forge" "forge" "forge script $DEPLOY_SCRIPT --tc $DEPLOY_CONTRACT --broadcast (Base mainnet)"
     cd packages/foundry
     forge script "$DEPLOY_SCRIPT" \
+      --tc "$DEPLOY_CONTRACT" \
       --rpc-url "$RPC" \
       --broadcast \
       --ffi \
