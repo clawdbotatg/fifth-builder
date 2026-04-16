@@ -591,6 +591,10 @@ Read every file in:
 CLIENT ADDRESS (must own all privileged roles): $CLIENT
 DEPLOYER ADDRESS: $DEPLOYER_ADDR
 
+PIPELINE CONTEXT — things that look like bugs but are not, do NOT flag these:
+- scaffold.config.ts targetNetworks is [chains.foundry] during audit. The outer worker switches it to [chains.base] in a later deploy step before shipping. Treat [chains.foundry] as expected at audit time.
+- packages/foundry/.env has a STUB DEPLOYER_PRIVATE_KEY = anvil account #0 (0xac09...ff80). It is a publicly-known key used only so \`forge build\`/\`forge test\` don't panic on vm.envUint. The real deployer key is injected at deploy time via \`forge script --private-key\` and never lands on disk. Do NOT flag the stub key as a leak.
+
 Perform a FULL audit following both skill files. Then write AUDIT_REPORT.md in the repo root with EXACTLY this format:
 
 # Audit Report — Cycle $CYCLE
