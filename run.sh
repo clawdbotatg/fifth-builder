@@ -867,6 +867,20 @@ if [[ "$CURRENT_STAGE" == "full_audit_fix" ]]; then
   pm_log "step4:next-build" "next" "yarn next:build (with localStorage polyfill)"
   rm -rf packages/nextjs/.next packages/nextjs/out
 
+  # Guard: any dynamic route (app/**/[param]/page.tsx) MUST export
+  # generateStaticParams() when next.config has output:'export', or `next build`
+  # aborts. The build-prompt tells the agent this, but agents still occasionally
+  # ship a dynamic route without the stub. Inject an empty stub here so the
+  # build doesn't fail — empty array is fine for app resolution via query-param
+  # or on-chain lookups client-side.
+  while IFS= read -r page; do
+    [[ -f "$page" ]] || continue
+    if ! grep -q 'generateStaticParams' "$page"; then
+      log "  Injecting generateStaticParams stub into $page"
+      printf '\nexport async function generateStaticParams() {\n  return [];\n}\n' >> "$page"
+    fi
+  done < <(find packages/nextjs/app -type f -name 'page.tsx' 2>/dev/null | grep -E '/\[[^/]+\]/')
+
   # Node 25+ ships a half-baked localStorage on globalThis (defined but with no
   # getItem function) which crashes RainbowKit / next-themes at build time.
   # Per https://www.bgipfs.com/SKILL.md, ship a polyfill via NODE_OPTIONS.
