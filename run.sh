@@ -534,6 +534,11 @@ SECURITY:
 - No hardcoded addresses for privileged roles — use $CLIENT
 - Verify .gitignore excludes .env before pushing
 
+STATIC EXPORT — the final deploy uses Next.js \`output: 'export'\` for IPFS (the outer worker flips next.config to export mode in a later step). Your frontend MUST be statically exportable:
+- Any dynamic route (\`app/**/[param]/page.tsx\`) MUST export a \`generateStaticParams()\` function. If there are no known params to pre-render, return \`[]\` — but the function MUST exist, or \`next build\` will fail under \`output: 'export'\`.
+- Do NOT use API routes (\`app/api/**\`), server actions, or \`export const dynamic = 'force-dynamic'\`. All data must come from on-chain reads, client-side fetches, or static content.
+- Prefer avoiding dynamic routes entirely when a client-side component + query param can do the job. If you do ship a dynamic route, verify \`yarn next:build\` succeeds with \`output: 'export'\` set before finishing — temporarily add it to next.config to test, then remove it.
+
 Do not ask me anything.
 PROMPT
 )"
