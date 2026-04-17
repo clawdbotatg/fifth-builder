@@ -870,12 +870,37 @@ if [[ "$CURRENT_STAGE" == "full_audit_fix" ]]; then
   # Guard: any dynamic route (app/**/[param]/page.tsx) MUST export
   # generateStaticParams() when next.config has output:'export', or `next build`
   # aborts. The build-prompt tells the agent this, but agents still occasionally
-  # ship a dynamic route without the stub. Inject an empty stub here so the
-  # build doesn't fail — empty array is fine for app resolution via query-param
-  # or on-chain lookups client-side.
+  # ship a dynamic route without the stub.
+  #
+  # Two cases:
+  #  1. File is a server component → append an empty generateStaticParams.
+  #  2. File starts with "use client" → Next.js forbids generateStaticParams in
+  #     a client component, so we split: move it to client-page.tsx and create
+  #     a tiny server wrapper page.tsx that exports generateStaticParams and
+  #     renders the client component.
   while IFS= read -r page; do
     [[ -f "$page" ]] || continue
-    if ! grep -q 'generateStaticParams' "$page"; then
+    dir=$(dirname "$page")
+    if head -5 "$page" | grep -qE '^["'\'']use client["'\'']'; then
+      log "  Splitting client dynamic route: $page"
+      mv "$page" "$dir/client-page.tsx"
+      # Drop any stray generateStaticParams from the client file — Next.js
+      # rejects it there. Matches "export [async] function generateStaticParams"
+      # through the first line-start "}".
+      sed -i.bak -E '/^export (async )?function generateStaticParams/,/^\}/d' "$dir/client-page.tsx"
+      rm -f "$dir/client-page.tsx.bak"
+      cat > "$page" <<'WRAP'
+import ClientPage from "./client-page";
+
+export async function generateStaticParams() {
+  return [];
+}
+
+export default function Page(props: any) {
+  return <ClientPage {...props} />;
+}
+WRAP
+    elif ! grep -q 'generateStaticParams' "$page"; then
       log "  Injecting generateStaticParams stub into $page"
       printf '\nexport async function generateStaticParams() {\n  return [];\n}\n' >> "$page"
     fi
