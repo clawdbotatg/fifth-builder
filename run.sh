@@ -534,10 +534,18 @@ SECURITY:
 - No hardcoded addresses for privileged roles — use $CLIENT
 - Verify .gitignore excludes .env before pushing
 
-STATIC EXPORT — the final deploy uses Next.js \`output: 'export'\` for IPFS (the outer worker flips next.config to export mode in a later step). Your frontend MUST be statically exportable:
-- Any dynamic route (\`app/**/[param]/page.tsx\`) MUST export a \`generateStaticParams()\` function. If there are no known params to pre-render, return \`[]\` — but the function MUST exist, or \`next build\` will fail under \`output: 'export'\`.
-- Do NOT use API routes (\`app/api/**\`), server actions, or \`export const dynamic = 'force-dynamic'\`. All data must come from on-chain reads, client-side fetches, or static content.
-- Prefer avoiding dynamic routes entirely when a client-side component + query param can do the job. If you do ship a dynamic route, verify \`yarn next:build\` succeeds with \`output: 'export'\` set before finishing — temporarily add it to next.config to test, then remove it.
+STATIC EXPORT — the final deploy uses Next.js \`output: 'export'\` for IPFS. The whole frontend must build under export mode. HARD RULES:
+- NO dynamic route segments. Do NOT create any \`app/**/[param]/page.tsx\` folders. Pages live at fixed paths only.
+- All per-item state goes through query params: \`/game?id=0xabc\`, read with \`useSearchParams()\` inside a \`<Suspense>\` boundary. Not \`/game/[id]\`.
+- NO API routes (\`app/api/**\`), NO server actions, NO \`export const dynamic = 'force-dynamic'\`, NO \`async\` page components that \`await\` params or searchParams. All data comes from on-chain reads (wagmi/scaffold hooks) or client-side fetches.
+- In \`packages/nextjs/next.config.ts\`, add a gate so the IPFS-export config only activates when \`NEXT_PUBLIC_IPFS_BUILD === "true"\`:
+  \`\`\`
+  ...(process.env.NEXT_PUBLIC_IPFS_BUILD === "true" && { output: "export", trailingSlash: true, images: { unoptimized: true } }),
+  \`\`\`
+  Keep the default (dev) mode unchanged — this gate is only for the production IPFS build.
+- Before you declare done, RUN this exact command from the repo root and it MUST pass cleanly:
+  \`NEXT_PUBLIC_IPFS_BUILD=true yarn next:build\`
+  A passing \`yarn next:build\` without this env var is NOT sufficient — it must pass WITH this env var. If it fails, fix the root cause (wrap \`useSearchParams\` in Suspense, remove dynamic routes, etc.) — do NOT just add \`@ts-ignore\` or disable the env gate.
 
 Do not ask me anything.
 PROMPT
@@ -867,44 +875,14 @@ if [[ "$CURRENT_STAGE" == "full_audit_fix" ]]; then
   pm_log "step4:next-build" "next" "yarn next:build (with localStorage polyfill)"
   rm -rf packages/nextjs/.next packages/nextjs/out
 
-  # Guard: any dynamic route (app/**/[param]/page.tsx) MUST export
-  # generateStaticParams() when next.config has output:'export', or `next build`
-  # aborts. The build-prompt tells the agent this, but agents still occasionally
-  # ship a dynamic route without the stub.
-  #
-  # Two cases:
-  #  1. File is a server component → append an empty generateStaticParams.
-  #  2. File starts with "use client" → Next.js forbids generateStaticParams in
-  #     a client component, so we split: move it to client-page.tsx and create
-  #     a tiny server wrapper page.tsx that exports generateStaticParams and
-  #     renders the client component.
-  while IFS= read -r page; do
-    [[ -f "$page" ]] || continue
-    dir=$(dirname "$page")
-    if head -5 "$page" | grep -qE '^["'\'']use client["'\'']'; then
-      log "  Splitting client dynamic route: $page"
-      mv "$page" "$dir/client-page.tsx"
-      # Drop any stray generateStaticParams from the client file — Next.js
-      # rejects it there. Matches "export [async] function generateStaticParams"
-      # through the first line-start "}".
-      sed -i.bak -E '/^export (async )?function generateStaticParams/,/^\}/d' "$dir/client-page.tsx"
-      rm -f "$dir/client-page.tsx.bak"
-      cat > "$page" <<'WRAP'
-import ClientPage from "./client-page";
-
-export async function generateStaticParams() {
-  return [];
-}
-
-export default function Page(props: any) {
-  return <ClientPage {...props} />;
-}
-WRAP
-    elif ! grep -q 'generateStaticParams' "$page"; then
-      log "  Injecting generateStaticParams stub into $page"
-      printf '\nexport async function generateStaticParams() {\n  return [];\n}\n' >> "$page"
-    fi
-  done < <(find packages/nextjs/app -type f -name 'page.tsx' 2>/dev/null | grep -E '/\[[^/]+\]/')
+  # Dynamic routes (app/**/[param]/page.tsx) are incompatible with output:'export'
+  # in ways a shell guard can't reliably fix (generateStaticParams returning []
+  # is rejected, useSearchParams bails out static rendering without Suspense,
+  # etc.). The build prompt forbids them outright; if one slips through, we
+  # want a loud build failure here rather than a half-working band-aid.
+  if find packages/nextjs/app -type f -name 'page.tsx' 2>/dev/null | grep -qE '/\[[^/]+\]/'; then
+    log "  WARNING: dynamic route segment found under packages/nextjs/app — the build prompt forbids these, export build will likely fail"
+  fi
 
   # Node 25+ ships a half-baked localStorage on globalThis (defined but with no
   # getItem function) which crashes RainbowKit / next-themes at build time.
